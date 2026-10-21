@@ -51,7 +51,7 @@ export const register: Register = on => {
   })
 
   // When Claude has answered, its cost is in the account's limits: poll now,
-  // the next a minute on. A subagent's turn ends inside the main one.
+  // the next five minutes on. A subagent's turn ends inside the main one.
   on('turn.complete', async ($, e, next) => {
     if (e.agentId === undefined && (await isDesktopOnWindows($))) {
       void pollLimits($, true)

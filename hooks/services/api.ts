@@ -35,23 +35,31 @@ function parse(text: string): Fields | null {
  * it, unlike the figures a reply of this session carries. `limits`: null when
  * there was no answer, empty when the plan has no 5-hour or weekly window (an
  * Enterprise seat, say). `retryAfterMs`: how long the server asked to wait
- * (Retry-After, on a 429 or a 503), when it said.
+ * (Retry-After, on a 429 or a 503), when it said. `failure`: why there was no
+ * answer, when there was none.
  */
-export type FetchedLimits = { limits: Limit[] | null; retryAfterMs?: number }
+export type FetchedLimits = { limits: Limit[] | null; retryAfterMs?: number; failure?: FetchFailure }
+
+/**
+ * Why a fetch brought no figures: the server answered with an error `status`;
+ * the session had no sign-in to ask with; or the answer was not JSON.
+ */
+export type FetchFailure = { kind: 'status'; status: number } | { kind: 'signedOut' } | { kind: 'unreadable' }
 
 export async function fetchLimits($: EngineInterface): Promise<FetchedLimits> {
   const response = await get($, USAGE_URL)
   if (!response) {
-    return { limits: null }
+    return { limits: null, failure: { kind: 'signedOut' } }
   }
   if (!response.ok) {
     const seconds = Number(response.headers['retry-after'])
+    const failure: FetchFailure = { kind: 'status', status: response.status }
 
-    return Number.isFinite(seconds) && seconds > 0 ? { limits: null, retryAfterMs: seconds * 1000 } : { limits: null }
+    return Number.isFinite(seconds) && seconds > 0 ? { limits: null, retryAfterMs: seconds * 1000, failure } : { limits: null, failure }
   }
   const body = parse(response.text)
   if (!body) {
-    return { limits: null }
+    return { limits: null, failure: { kind: 'unreadable' } }
   }
 
   return { limits: usageLimits(body, await $.clock.now(), await localTimeZone($)) }

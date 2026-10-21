@@ -6,6 +6,7 @@ import { signedInAccount } from '../platform/env'
 import { asNumber, asString, isRecord } from '../platform/json'
 import { bestEffort, logFailure } from '../platform/log'
 import { fetchLimits } from './api'
+import type { FetchFailure } from './api'
 import { applyLimits } from './meter'
 import { rememberLimits } from './snapshots'
 import { POLL_KEY } from './storeKeys'
@@ -22,20 +23,21 @@ import { asLimits } from './storedLimits'
 // claims and fetches too, so now and then two sessions ask in one slot. After a
 // fetch that got no figures (a 429, a refusal, no network) all of them wait, as
 // long as the server says, else longer each time, so a lasting failure is not
-// asked again each minute by every session. Within a session the polls run one
+// asked again at every slot by every session. Within a session the polls run one
 // after another, so its timer and a turn's end never both claim the slot and fetch.
 //
-// A poll runs when a turn of Claude's ends, whose cost it then shows, and a
-// minute after the last one while none ends; each session's timer is set to
-// the shared slot's end.
+// A poll runs when a turn of Claude's ends, whose cost it then shows, and five
+// minutes after the last one while none ends, for what the account spends
+// elsewhere (the chat, the phone); each session's timer is set to the shared
+// slot's end.
 
-const POLL_MS = 60_000
+const POLL_MS = 5 * 60_000
 // How far past its slot's end a timer runs, so the slot has surely ended.
 const POLL_TIMER_LAG_MS = 50
-// A turn's end polls unless a poll was asked this recently (two sessions'
-// turns ending together, say).
-const TURN_POLL_GAP_MS = 5_000
-const BACKOFF_MS = [2, 5, 10, 15].map(minutes => minutes * 60_000)
+// A turn's end polls unless any session asked this recently, so the sessions
+// together never ask more often than this.
+const TURN_POLL_GAP_MS = 2 * 60_000
+const BACKOFF_MS = [5, 10, 15].map(minutes => minutes * 60_000)
 // A plan with no window and no spend has nothing for the timer to follow: it
 // is asked this seldom, and still at a turn's end.
 const NO_WINDOW_POLL_MS = 10 * 60_000
@@ -44,9 +46,19 @@ const NO_WINDOW_POLL_MS = 10 * 60_000
 const CLAIMANT = crypto.randomUUID()
 
 /**
+ * The last fetch that brought no figures: when, and why: the server's error
+ * `status` and the wait it asked for (`retryAfterMs`), no sign-in to ask with,
+ * an answer that was not JSON, or no answer at all (`unreachable`: no network,
+ * a refusal). Kept past the fetches that succeed after it, for whoever looks
+ * into the polls (the store's file, a bug report).
+ */
+export type PollFailure = { at: number; reason: FetchFailure['kind'] | 'unreachable'; status?: number; retryAfterMs?: number }
+
+/**
  * `account`: whose limits; `at`: when `limits` were fetched; `askedAt`: when a
  * session last asked, and `claimant`, which; `nextAt`: no session's timer asks
- * before then (nor, after a failed fetch, a turn's end).
+ * before then (nor, after a failed fetch, a turn's end); `lastFailure`: the
+ * last fetch that failed.
  */
 export type PollState = {
   account: string | null
@@ -56,6 +68,33 @@ export type PollState = {
   limits: Limit[] | null
   nextAt: number
   failures: number
+  lastFailure?: PollFailure
+}
+
+const FAILURE_REASONS: readonly PollFailure['reason'][] = ['status', 'signedOut', 'unreadable', 'unreachable']
+
+/** `value` when it is a failure as the poll keeps it, else null. */
+function asPollFailure(value: unknown): PollFailure | null {
+  if (!isRecord(value)) {
+    return null
+  }
+  const [at, status, retryAfterMs] = [asNumber(value.at), asNumber(value.status), asNumber(value.retryAfterMs)]
+  const reason = FAILURE_REASONS.find(one => one === value.reason)
+  if (at === null || reason === undefined) {
+    return null
+  }
+
+  return { at, reason, ...(status === null ? {} : { status }), ...(retryAfterMs === null ? {} : { retryAfterMs }) }
+}
+
+/** What a failed fetch says of itself, for the debug log: "HTTP 429, Retry-After 600s". */
+function failureText(failure: PollFailure) {
+  if (failure.reason !== 'status') {
+    return failure.reason
+  }
+  const wait = failure.retryAfterMs === undefined ? '' : `, Retry-After ${failure.retryAfterMs / 1000}s`
+
+  return `HTTP ${failure.status}${wait}`
 }
 
 async function readPoll($: EngineInterface): Promise<PollState | null> {
@@ -68,6 +107,7 @@ async function readPoll($: EngineInterface): Promise<PollState | null> {
   if (at === null || nextAt === null || (value.limits !== null && limits === null)) {
     return null
   }
+  const lastFailure = asPollFailure(value.lastFailure)
 
   return {
     account: asString(value.account),
@@ -77,6 +117,7 @@ async function readPoll($: EngineInterface): Promise<PollState | null> {
     limits,
     nextAt,
     failures: failures ?? 0,
+    ...(lastFailure ? { lastFailure } : {}),
   }
 }
 
@@ -112,7 +153,14 @@ async function refreshLimits($: EngineInterface, isTurnEnd: boolean): Promise<nu
       return nextAt
     }
     const fetched = await bestEffort($, 'fetching the limits', fetchLimits($))
-    const answered = { account, at: now, askedAt: now, claimant: CLAIMANT, failures: 0 }
+    const answered = {
+      account,
+      at: now,
+      askedAt: now,
+      claimant: CLAIMANT,
+      failures: 0,
+      ...(poll?.lastFailure ? { lastFailure: poll.lastFailure } : {}),
+    }
     if (fetched?.limits?.length === 0) {
       const quietAt = now + NO_WINDOW_POLL_MS
       await $.store.set(POLL_KEY, { ...answered, limits: [], nextAt: quietAt })
@@ -128,7 +176,18 @@ async function refreshLimits($: EngineInterface, isTurnEnd: boolean): Promise<nu
     // No figures: the server's wait when it named one, else a longer one each time.
     const wait = fetched?.retryAfterMs ?? BACKOFF_MS[Math.min(failures, BACKOFF_MS.length - 1)]!
     const backoffAt = now + Math.max(wait, POLL_MS)
-    await $.store.set(POLL_KEY, { ...base, askedAt: now, claimant: CLAIMANT, nextAt: backoffAt, failures: failures + 1 })
+    // A fetch that threw (no network, a refusal) is logged already, as bestEffort logs it.
+    const failure = fetched?.failure
+    const lastFailure: PollFailure = {
+      at: now,
+      reason: failure?.kind ?? 'unreachable',
+      ...(failure?.kind === 'status' ? { status: failure.status } : {}),
+      ...(fetched?.retryAfterMs === undefined ? {} : { retryAfterMs: fetched.retryAfterMs }),
+    }
+    if (fetched) {
+      logFailure($, 'fetching the limits', failureText(lastFailure))
+    }
+    await $.store.set(POLL_KEY, { ...base, askedAt: now, claimant: CLAIMANT, nextAt: backoffAt, failures: failures + 1, lastFailure })
     return backoffAt
   } catch (error) {
     // The store failed: the next reply's figures still arrive.
