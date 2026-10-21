@@ -1,0 +1,6 @@
+node_modules/
+# Written by Claude Code each time it loads the mod from this folder.
+.claude-plugin/types/
+*.log
+# Written by Invoke-Pester -CI.
+testResults.xml

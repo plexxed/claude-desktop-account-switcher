@@ -1,0 +1,51 @@
+name: Bug report
+description: Something the mod does wrong, or doesn't do.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. A security problem goes through the repository's **Security** tab instead (see SECURITY.md).
+        Please leave tokens, cookies and the contents of `auth.json` out of everything you paste here.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open the Accounts list
+        2. ...
+    validations:
+      required: true
+  - type: input
+    id: mod
+    attributes:
+      label: Mod version
+      description: '`claude plugin list` shows it, under `account-switcher`.'
+    validations:
+      required: true
+  - type: input
+    id: claude
+    attributes:
+      label: Claude Desktop version
+      description: And where it came from, the Microsoft Store or the installer.
+      placeholder: 1.x, Microsoft Store
+    validations:
+      required: true
+  - type: input
+    id: windows
+    attributes:
+      label: Windows version
+      placeholder: Windows 11 23H2
+  - type: textarea
+    id: log
+    attributes:
+      label: switcher.log
+      description: The last lines of `%USERPROFILE%\.claude\plugins\data\account-switcher\switcher.log`, and anything `claude --debug` logged for `account-switcher`.
+      render: text

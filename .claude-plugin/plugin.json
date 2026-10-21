@@ -1,0 +1,12 @@
+{
+  "name": "account-switcher",
+  "displayName": "Account Switcher",
+  "version": "0.1.0",
+  "description": "Switch Claude Desktop on Windows between saved accounts from a band above the prompt, with each account's plan limits, and optionally one Code session list for the accounts you choose (unofficial; restarts the app)",
+  "author": { "name": "plexxed", "url": "https://github.com/plexxed" },
+  "license": "MIT",
+  "homepage": "https://github.com/plexxed/claude-desktop-account-switcher#readme",
+  "repository": "https://github.com/plexxed/claude-desktop-account-switcher",
+  "keywords": ["accounts", "claude-desktop", "windows", "usage", "limits", "mod"],
+  "types": "./types/index.d.ts"
+}

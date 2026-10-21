@@ -1,0 +1,16 @@
+name: Private contact request
+description: Ask a maintainer for a private way to talk, about someone's behavior (see CODE_OF_CONDUCT.md).
+title: Private contact request
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This issue is public: leave every detail out of it. A maintainer will reply here with a private way to talk.
+        A security problem goes through the repository's **Security** tab instead (see SECURITY.md).
+  - type: checkboxes
+    id: confirm
+    attributes:
+      label: Before you open it
+      options:
+        - label: I've left the details out of this issue.
+          required: true

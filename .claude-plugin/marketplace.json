@@ -1,0 +1,12 @@
+{
+  "name": "account-switcher",
+  "owner": { "name": "plexxed", "url": "https://github.com/plexxed" },
+  "description": "The Account Switcher mod for Claude Desktop on Windows",
+  "plugins": [
+    {
+      "name": "account-switcher",
+      "source": "./",
+      "description": "Switch Claude Desktop on Windows between saved accounts from a band above the prompt, with each account's plan limits (unofficial; restarts the app)"
+    }
+  ]
+}

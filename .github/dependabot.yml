@@ -1,0 +1,19 @@
+# Keeps the pinned versions current: the actions CI pins by commit, and the
+# development tools of package.json. Monthly, each group in one pull request.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    groups:
+      actions:
+        patterns: ['*']
+
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: monthly
+    groups:
+      development-tools:
+        patterns: ['*']

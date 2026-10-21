@@ -1,0 +1,9 @@
+node_modules/
+.claude-plugin/types/
+package-lock.json
+# Strict JSON inside TypeScript, which the Pester tests read as JSON: double quotes stay.
+tests/fixtures/
+# PowerShell: PSScriptAnalyzer checks its style (npm run lint:ps).
+*.ps1
+*.psm1
+*.psd1

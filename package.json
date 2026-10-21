@@ -1,0 +1,37 @@
+{
+  "name": "account-switcher",
+  "private": true,
+  "description": "Development scripts for the account-switcher Claude Code mod. Nothing here is needed to run the mod.",
+  "author": "plexxed (https://github.com/plexxed)",
+  "license": "MIT",
+  "homepage": "https://github.com/plexxed/claude-desktop-account-switcher#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/plexxed/claude-desktop-account-switcher.git"
+  },
+  "bugs": {
+    "url": "https://github.com/plexxed/claude-desktop-account-switcher/issues"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "check": "node tools/check.mjs validate typecheck lint format:check test test:ps lint:ps",
+    "validate": "claude plugin validate .",
+    "types": "node tools/types.mjs",
+    "typecheck": "tsc -p .",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "claude plugin test .",
+    "test:ps": "powershell -NoProfile -ExecutionPolicy Bypass -Command \"Invoke-Pester -Path tests -CI\"",
+    "lint:ps": "powershell -NoProfile -ExecutionPolicy Bypass -Command \"$r = Invoke-ScriptAnalyzer -Path scripts -Recurse -Settings ./PSScriptAnalyzerSettings.psd1; $r | Format-Table -AutoSize; if ($r) { exit 1 }\""
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "eslint": "10.13.0",
+    "prettier": "3.9.10",
+    "typescript": "5.6.3",
+    "typescript-eslint": "8.72.0"
+  }
+}

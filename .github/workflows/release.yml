@@ -1,0 +1,44 @@
+# A release for each version tag (v0.2.0): the tag must name the version that
+# .claude-plugin/plugin.json and the PowerShell module's manifest carry, and
+# the release notes are that version's section of CHANGELOG.md. The plugin is
+# installed from the repository itself, so the release only marks the version.
+# Actions are pinned to a commit, its tag beside it, since a tag can be moved.
+name: Release
+
+on:
+  push:
+    tags: ['v*.*.*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # The tag reaches the scripts through the environment, never spliced into them.
+      - name: Check the versions and write the notes
+        shell: pwsh
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          $version = $env:TAG.TrimStart('v')
+          $plugin = (Get-Content .claude-plugin/plugin.json -Raw | ConvertFrom-Json).version
+          $module = (Import-PowerShellDataFile scripts/AccountSwitcher.psd1).ModuleVersion
+          if ($plugin -ne $version -or $module -ne $version) {
+              throw "The tag says $version; plugin.json says $plugin and AccountSwitcher.psd1 says $module."
+          }
+          $changelog = Get-Content CHANGELOG.md -Raw
+          $section = [regex]::Match($changelog, "(?ms)^## \[$([regex]::Escape($version))\][^\n]*\n(.*?)(?=^## \[|\z)")
+          if (-not $section.Success) { throw "CHANGELOG.md has no section for $version." }
+          Set-Content -Path release-notes.md -Value $section.Groups[1].Value.Trim() -Encoding utf8
+
+      - name: Publish the release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: gh release create $env:TAG --title $env:TAG --notes-file release-notes.md --verify-tag

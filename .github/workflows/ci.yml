@@ -1,0 +1,75 @@
+# The checks of `npm run check` on Windows, where the mod runs, for every push
+# and pull request that changes more than the documentation. The type check
+# reads the declarations Claude Code writes to .claude-plugin/types/ when a
+# session loads the mod; `npm run types` has it write them first, as the runner
+# has no session. Actions are pinned to a commit, its tag beside it, since a tag
+# can be moved.
+name: CI
+
+# Documentation alone runs nothing here: `npm run check` formats it locally.
+on:
+  push:
+    branches: [main]
+    paths-ignore: ['**.md', 'docs/**', 'LICENSE']
+  pull_request:
+    paths-ignore: ['**.md', 'docs/**', 'LICENSE']
+
+permissions:
+  contents: read
+
+# A newer push to the same branch or pull request supersedes the run before it.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    # Windows PowerShell, as where the mod runs: the runner's default, PowerShell 7,
+    # passes its PSModulePath on to the Windows PowerShell the scripts start, which
+    # then loads its modules from PowerShell 7's and finds none of its own cmdlets.
+    defaults:
+      run:
+        shell: powershell
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install the development tools
+        run: npm ci
+
+      - name: Install Claude Code, which validates and tests the mod
+        run: npm install --global @anthropic-ai/claude-code@2.1.299
+
+      # Installing from the PowerShell Gallery takes minutes, so the modules are
+      # cached, by their versions.
+      - name: Cache Pester and PSScriptAnalyzer
+        id: ps-modules
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~\Documents\WindowsPowerShell\Modules\Pester
+            ~\Documents\WindowsPowerShell\Modules\PSScriptAnalyzer
+          key: ps-modules-pester-6.2.0-psscriptanalyzer-1.25.0
+
+      # Exact versions, as for every other tool here, so a run checks what the last one did.
+      - name: Install Pester and PSScriptAnalyzer
+        if: steps.ps-modules.outputs.cache-hit != 'true'
+        run: |
+          Set-PSRepository PSGallery -InstallationPolicy Trusted
+          Install-Module Pester -RequiredVersion 6.2.0 -Scope CurrentUser -SkipPublisherCheck -Force
+          Install-Module PSScriptAnalyzer -RequiredVersion 1.25.0 -Scope CurrentUser -Force
+
+      - run: npm run validate
+      - run: npm run types
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm run format:check
+      - run: npm test
+      - run: npm run test:ps
+      - run: npm run lint:ps
