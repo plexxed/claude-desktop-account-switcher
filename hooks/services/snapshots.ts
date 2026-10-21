@@ -1,6 +1,7 @@
 import type { EngineInterface } from 'claude-code'
 
 import type { Limit } from '../../types'
+import { mergeLimit } from '../domain/limits'
 import { signedInAccount } from '../platform/env'
 import { asNumber, isRecord } from '../platform/json'
 import { snapshotKey } from './storeKeys'
@@ -35,7 +36,9 @@ export type Remembered = { isAnswer?: boolean; measuredAt?: number }
 /**
  * Keeps the signed-in account's figures, seen as of when they were measured: a
  * snapshot never reads older than the one it replaces, whose newer figures are
- * merged into these.
+ * merged into these, window by window (see mergeLimit), so figures older than
+ * the kept ones (a poll fetched before the last reply, say) never undo them.
+ * The kinds kept are those of `limits`.
  */
 export async function rememberLimits($: EngineInterface, limits: Limit[], { isAnswer = false, measuredAt }: Remembered = {}) {
   const account = await signedInAccount($)
@@ -43,5 +46,12 @@ export async function rememberLimits($: EngineInterface, limits: Limit[], { isAn
     return
   }
   const [now, last] = await Promise.all([$.clock.now(), readSnapshot($, account)])
-  await $.store.set(snapshotKey(account), { limits, at: Math.max(measuredAt ?? now, last?.at ?? 0) })
+  const merged = limits.map(one =>
+    mergeLimit(
+      last?.limits.find(kept => kept.kind === one.kind),
+      one,
+      now,
+    ),
+  )
+  await $.store.set(snapshotKey(account), { limits: merged, at: Math.max(measuredAt ?? now, last?.at ?? 0) })
 }

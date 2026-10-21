@@ -36,6 +36,17 @@ async function statusMeter($: EngineInterface, withLimits: boolean) {
 }
 
 /**
+ * The meter a session starts from, before its first measurement: its context,
+ * and the signed-in account's last known limits, so the first figures to come
+ * (a poll older than them, say) merge into them rather than replace them.
+ */
+async function startMeter($: EngineInterface): Promise<Meter> {
+  const [status, snapshot] = await Promise.all([statusMeter($, false), signedInAccount($).then(account => readSnapshot($, account))])
+
+  return { ...status, limits: snapshot?.limits ?? [] }
+}
+
+/**
  * The meter, or the status line's figures until the first measurement this
  * session; while neither has limits (a session just started, its first poll
  * failed), the signed-in account's last known ones, which the band ages by
@@ -64,8 +75,7 @@ export type LimitsSource = { answered?: readonly string[]; measuredAt?: number }
  */
 export async function applyLimits($: EngineInterface, limits: Limit[], { answered = [], measuredAt }: LimitsSource = {}) {
   const now = await $.clock.now()
-  // Before the first measurement, the session's context with no limits yet.
-  const known = (await readMeter($)) ?? (await statusMeter($, false))
+  const known = (await readMeter($)) ?? (await startMeter($))
   const merge = (meter: Meter) => mergeLimits(meter.limits, limits, now, answered)
   if (JSON.stringify(merge(known)) === JSON.stringify(known.limits)) {
     await rememberLimits($, known.limits, { measuredAt })
@@ -87,7 +97,8 @@ export async function applyLimits($: EngineInterface, limits: Limit[], { answere
 export async function applyMeasure($: EngineInterface, context: SessionContextUsage, rateLimits: SessionRateLimit[]) {
   const detailed = await bestEffort($, 'context breakdown', $.session.usage({ breakdown: 'summary' }))
   const measured = toMeter(detailed?.context ?? context, [])
-  await updateMeter($, current => ({ ...measured, limits: current?.limits ?? [] }))
+  const start = (await readMeter($)) ? null : await startMeter($)
+  await updateMeter($, current => ({ ...measured, limits: current?.limits ?? start?.limits ?? [] }))
   if (rateLimits.length) {
     await applyLimits($, toLimits(rateLimits))
   }

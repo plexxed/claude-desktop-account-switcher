@@ -42,7 +42,7 @@ test('while the profiles can’t be read, no account’s limits are dropped', as
 
 // --- Polling the limits ------------------------------------------------------------------
 
-test('the account’s limits are fetched each minute, so other sessions’ use shows up', async ($: Engine, on: On) => {
+test('the account’s limits are fetched every five minutes, so other sessions’ use shows up', async ($: Engine, on: On) => {
   fakeHost(on, { isClockFixed: false })
   let fiveHour = 40
   const asked = fakeApi(on, () => ({ body: usageAnswer(fiveHour) }))
@@ -51,7 +51,7 @@ test('the account’s limits are fetched each minute, so other sessions’ use s
   expect(await band.find({ type: 'Text', text: /^40%$/ })).toBeDefined()
 
   fiveHour = 47
-  await clock.advance(59_000)
+  await clock.advance(5 * 60_000 - 1_000)
   expect(asked).toHaveLength(1)
   await clock.advance(1_000 + TICK_LAG)
   expect(asked).toHaveLength(2)
@@ -70,25 +70,25 @@ test('a plan shows its windows or, having none, its monthly spend; a figure the 
 
   // Spent money and all, a plan with windows shows only them.
   answer = { ...usageAnswer(40), extra_usage }
-  await clock.advance(60_000 + TICK_LAG)
+  await clock.advance(5 * 60_000 + TICK_LAG)
   expect(await band.find({ type: 'Text', text: 'Spend' })).toBeUndefined()
   expect(await band.find({ type: 'Text', text: /^40%$/ })).toBeDefined()
 })
 
-test('when Claude has answered the limits are polled at once, the next a minute on; a subagent’s turn asks nothing', async ($: Engine, on: On) => {
+test('when Claude has answered the limits are polled at once, the next five minutes on; a subagent’s turn asks nothing', async ($: Engine, on: On) => {
   fakeHost(on, { isClockFixed: false })
   const asked = fakeApi(on, () => ({ body: usageAnswer(40) }))
   const clock = await startSession($, on)
   expect(asked).toHaveLength(1)
 
-  await clock.advance(30_000)
+  await clock.advance(2 * 60_000)
   await $.turn.complete({ ...TURN_END, turnId: 't1' })
   await clock.settle()
   expect(asked).toHaveLength(2)
   await $.turn.complete({ ...TURN_END, turnId: 't2', agentId: 'a1' })
   await clock.settle()
   expect(asked).toHaveLength(2)
-  await clock.advance(50_000)
+  await clock.advance(5 * 60_000 - 10_000)
   expect(asked).toHaveLength(2)
   await clock.advance(10_000 + TICK_LAG)
   expect(asked).toHaveLength(3)
@@ -99,9 +99,37 @@ test('two turns ending at once in one session fetch the limits once', async ($: 
   const asked = fakeApi(on, () => ({ body: usageAnswer(40) }))
   const clock = await startSession($, on)
 
-  await clock.advance(30_000)
+  await clock.advance(2 * 60_000)
   await Promise.all([$.turn.complete({ ...TURN_END, turnId: 't1' }), $.turn.complete({ ...TURN_END, turnId: 't2' })])
   await clock.settle()
+  expect(asked).toHaveLength(2)
+})
+
+test('a turn’s end within two minutes of the last poll, any session’s, asks nothing; the next poll is five minutes after the last', async ($: Engine, on: On) => {
+  const poll = {
+    account: WORK,
+    at: NOW - 60_000,
+    askedAt: NOW - 60_000,
+    limits: [{ kind: 'five_hour', percentUsed: 30 }],
+    nextAt: NOW + 4 * 60_000,
+    failures: 0,
+  }
+  fakeHost(on, { isClockFixed: false, store: { [POLL_KEY]: poll } })
+  const asked = fakeApi(on, () => ({ body: usageAnswer(40) }))
+  const clock = await startSession($, on)
+  expect(asked).toHaveLength(0)
+
+  await clock.advance(30_000)
+  await $.turn.complete({ ...TURN_END, turnId: 't1' })
+  await clock.settle()
+  expect(asked).toHaveLength(0)
+  await clock.advance(30_000)
+  await $.turn.complete({ ...TURN_END, turnId: 't2' })
+  await clock.settle()
+  expect(asked).toHaveLength(1)
+  await clock.advance(5 * 60_000 - 10_000)
+  expect(asked).toHaveLength(1)
+  await clock.advance(10_000 + TICK_LAG)
   expect(asked).toHaveLength(2)
 })
 
@@ -114,16 +142,16 @@ for (const [failure, answer] of [
     const { stored } = fakeHost(on, { isClockFixed: false })
     const asked = fakeApi(on, () => (answer === 'offline' ? { refused: 'no network' } : answer))
     const clock = await startSession($, on)
-    expect(stored.get(POLL_KEY)).toMatchObject({ account: WORK, nextAt: NOW + 2 * 60_000, failures: 1 })
+    expect(stored.get(POLL_KEY)).toMatchObject({ account: WORK, nextAt: NOW + 5 * 60_000, failures: 1 })
 
     await clock.advance(30_000)
     await $.turn.complete({ ...TURN_END, turnId: 't1' })
     await clock.settle()
     expect(asked).toHaveLength(1)
-    // 2 minutes, then 5.
-    await clock.advance(90_000 + TICK_LAG)
+    // 5 minutes, then 10.
+    await clock.advance(4.5 * 60_000 + TICK_LAG)
     expect(asked).toHaveLength(2)
-    await clock.advance(4 * 60_000)
+    await clock.advance(9 * 60_000)
     expect(asked).toHaveLength(2)
     await clock.advance(60_000)
     expect(asked).toHaveLength(3)
@@ -137,6 +165,25 @@ test('a 429’s Retry-After is honored', async ($: Engine, on: On) => {
 
   expect(stored.get(POLL_KEY)).toMatchObject({ nextAt: NOW + 600_000 })
 })
+
+for (const [failure, answer, lastFailure] of [
+  ['a 429', { status: 429, headers: { 'retry-after': '600' } }, { reason: 'status', status: 429, retryAfterMs: 600_000 }],
+  ['a server error', { status: 500 }, { reason: 'status', status: 500 }],
+  ['an answer that is not JSON', { body: 'not JSON' }, { reason: 'unreadable' }],
+  ['no network', 'offline', { reason: 'unreachable' }],
+] as const) {
+  test(`after ${failure} the poll keeps why it failed, past the fetch that succeeds next`, async ($: Engine, on: On) => {
+    const { stored } = fakeHost(on, { isClockFixed: false })
+    let isFailing = true
+    fakeApi(on, () => (!isFailing ? { body: usageAnswer(10) } : answer === 'offline' ? { refused: 'no network' } : answer))
+    const clock = await startSession($, on)
+    expect(stored.get(POLL_KEY)).toMatchObject({ failures: 1, lastFailure: { at: NOW, ...lastFailure } })
+
+    isFailing = false
+    await clock.advance(10 * 60_000 + TICK_LAG)
+    expect(stored.get(POLL_KEY)).toMatchObject({ failures: 0, lastFailure: { at: NOW, ...lastFailure } })
+  })
+}
 
 test('another session’s fresh poll of this account is used, not fetched again', async ($: Engine, on: On) => {
   const poll = { account: WORK, at: NOW - 30_000, limits: [{ kind: 'five_hour', percentUsed: 55 }], nextAt: NOW + 90_000, failures: 0 }
@@ -157,6 +204,25 @@ test('figures of a poll made while the server refuses read as old as their fetch
   await startSession($, on)
 
   expect(stored.get(snapshotKey(WORK))).toMatchObject({ at: fetchedAt, limits: [{ kind: 'five_hour', percentUsed: 55 }] })
+})
+
+test('a session started while the server refuses keeps the account’s later figures, not the last poll’s', async ($: Engine, on: On) => {
+  const resetsAt = new Date(NOW + 30 * 60_000).toISOString()
+  const poll = {
+    account: WORK,
+    at: NOW - 90 * 60_000,
+    limits: [{ kind: 'five_hour', percentUsed: 69, resetsAt }],
+    nextAt: NOW + 90_000,
+    failures: 2,
+  }
+  const snapshot = { at: NOW - 2 * 60_000, limits: [{ kind: 'five_hour', percentUsed: 98, resetsAt }] }
+  const { stored } = fakeHost(on, { isClockFixed: false, hasLimits: false, store: { [POLL_KEY]: poll, [snapshotKey(WORK)]: snapshot } })
+  fakeApi(on, () => ({ status: 429 }))
+  await startSession($, on)
+  const band = await mountBand($, 'desktop')
+
+  expect(await band.find({ type: 'Text', text: /^98%$/ })).toBeDefined()
+  expect(stored.get(snapshotKey(WORK))).toMatchObject({ at: snapshot.at, limits: [{ kind: 'five_hour', percentUsed: 98 }] })
 })
 
 test('another account’s poll is not taken for this one', async ($: Engine, on: On) => {
@@ -195,7 +261,7 @@ test('the limits are remembered for the account, and a failed fetch keeps the fi
   })
 
   status = 500
-  await clock.advance(60_000 + TICK_LAG)
+  await clock.advance(5 * 60_000 + TICK_LAG)
   const band = await mountBand($, 'desktop')
   expect(await band.find({ type: 'Text', text: /^40%$/ })).toBeDefined()
 })
