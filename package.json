@@ -19,6 +19,7 @@
     "check": "node tools/check.mjs validate typecheck lint format:check test test:ps lint:ps",
     "validate": "claude plugin validate .",
     "types": "node tools/types.mjs",
+    "bump": "node tools/bump.mjs",
     "typecheck": "tsc -p .",
     "lint": "eslint .",
     "format": "prettier --write .",

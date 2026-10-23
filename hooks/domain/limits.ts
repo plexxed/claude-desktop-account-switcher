@@ -46,6 +46,9 @@ export function isLimitKind(kind: string): kind is LimitKind {
 /** The 5-hour window: the one that decides whether to switch now. */
 export const FIVE_HOUR: LimitKind = 'five_hour'
 
+/** The weekly window: while it is used up, the 5-hour one does not matter. */
+export const SEVEN_DAY: LimitKind = 'seven_day'
+
 /** The money spent past the plan this month. */
 export const SPEND_KIND: LimitKind = 'extra_usage'
 
@@ -101,6 +104,11 @@ export function limitNow(limit: Limit, now: number): Limit {
   }
 
   return { ...limit, percentUsed: 0, ...(limit.spend && { spend: { ...limit.spend, used: 0 } }) }
+}
+
+/** Whether `limit` is used up at `now`: 100% or more, in a window not yet reset. */
+export function isUsedUp(limit: Limit, now: number) {
+  return limitNow(limit, now).percentUsed >= 100
 }
 
 // --- Two sources, one figure ------------------------------------------------------------

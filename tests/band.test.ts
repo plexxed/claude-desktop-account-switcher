@@ -240,6 +240,40 @@ test(`the signed-in account is listed first, the others with their last known li
   expect(options.find(one => one.value === 'side')?.label).toBe(t('picker.option', { name: 'side', status: t('picker.noSignIn') }))
 })
 
+test(`an account whose week is used up says the weekly limit and when it resets, in place of the 5-hour one`, async ($: Engine, on: On) => {
+  const at = (ms: number) => new Date(NOW + ms).toISOString()
+  fakeHost(on, {
+    profiles: { alpha: { account: OTHER }, home: { account: HOME }, work: { account: DESKTOP_ENV.CLAUDE_CODE_ACCOUNT_UUID } },
+    store: {
+      [snapshotKey(HOME)]: {
+        at: NOW - 3_600_000,
+        limits: [
+          { kind: 'five_hour', percentUsed: 40 },
+          { kind: 'seven_day', percentUsed: 100, resetsAt: at((3 * 24 + 4) * 3_600_000) },
+        ],
+      },
+      // A week used up that has reset since: the 5-hour window decides again.
+      [snapshotKey(OTHER)]: {
+        at: NOW - 3_600_000,
+        limits: [
+          { kind: 'five_hour', percentUsed: 40 },
+          { kind: 'seven_day', percentUsed: 100, resetsAt: at(-60_000) },
+        ],
+      },
+    },
+  })
+  const options = await pickerOptions(await band($))
+
+  const week = t('limit.summaryResets', {
+    label: limitLabel('seven_day'),
+    value: t('limit.percent', { percent: 100 }),
+    countdown: t('duration.daysHours', { d: 3, h: 4 }),
+  })
+  const fiveHour = t('limit.summary', { label: limitLabel('five_hour'), value: t('limit.percent', { percent: 40 }) })
+  expect(options.find(one => one.value === 'home')?.label).toBe(t('picker.option', { name: 'home', status: week }))
+  expect(options.find(one => one.value === 'alpha')?.label).toBe(t('picker.option', { name: 'alpha', status: fiveHour }))
+})
+
 test(`an account signed in from Claude's own screen is "This account" until it is named`, async ($: Engine, on: On) => {
   const { runs } = fakeHost(on, { env: { ...DESKTOP_ENV, CLAUDE_CODE_ACCOUNT_UUID: OTHER } })
   const ui = await band($, { maxRows: 20 })

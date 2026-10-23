@@ -3,7 +3,7 @@ import type { EngineInterface, RenderInput } from 'claude-code'
 import type { Busy, Limit, Meter } from '../../types'
 import { contextLevel } from '../domain/levels'
 import type { Level } from '../domain/levels'
-import { FIVE_HOUR, longestCountdownMinutes, resetTime } from '../domain/limits'
+import { FIVE_HOUR, SEVEN_DAY, isUsedUp, longestCountdownMinutes, resetTime } from '../domain/limits'
 import type { Profile } from '../domain/profiles'
 import { boundedMap } from '../platform/boundedMap'
 import { readBusy } from '../platform/state'
@@ -140,15 +140,18 @@ function limitMetric(limit: Limit, now: number, timeZone: string): Metric {
 /**
  * An option of the picker's open list: "second — 5h 40% ↻1h 20m", "second — No
  * saved sign-in", or the name alone when nothing was seen yet. The list is
- * narrow, so it says only the 5-hour window, the one that decides whether to
- * switch now; the weekly one and when they were seen are the Accounts list's to
- * say. The name gets what the rest leaves of OPTION_EMS.
+ * narrow, so it says only the window that decides whether to switch now: the
+ * 5-hour one, or the weekly one while it is used up ("second — 7d 100% ↻3d 4h");
+ * the rest and when they were seen are the Accounts list's to say. The name
+ * gets what the rest leaves of OPTION_EMS.
  */
 function optionLabel(profile: string, snapshot: Snapshot | null, now: number, isNeverSignedIn: boolean) {
-  // The 5-hour window; on a plan without one, its first capped figure (a monthly spend, say).
+  // The weekly window while it is used up, else the 5-hour one; on a plan
+  // without either, its first capped figure (a monthly spend, say).
   const known = snapshot?.limits.filter(limit => limit.spend?.limit !== null) ?? []
+  const weekUsedUp = known.filter(limit => limit.kind === SEVEN_DAY && isUsedUp(limit, now))
   const fiveHour = known.filter(limit => limit.kind === FIVE_HOUR)
-  const shown = fiveHour.length ? fiveHour : known.slice(0, 1)
+  const shown = weekUsedUp.length ? weekUsedUp : fiveHour.length ? fiveHour : known.slice(0, 1)
   const status = isNeverSignedIn ? t('picker.noSignIn') : shown.length ? limitsSummary(shown, now) : null
   if (status === null) {
     return cutToEms(profile, OPTION_EMS)

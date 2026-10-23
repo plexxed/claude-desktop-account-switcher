@@ -68,6 +68,7 @@ tests/                       mod tests (*.test.ts) and Pester tests (*.Tests.ps1
   fixtures/                  the cases both sides are tested against, where both decide the same thing
 tools/check.mjs              runs the checks side by side
 tools/types.mjs              has Claude Code write the plugin API's type declarations
+tools/bump.mjs               sets the version for a release
 docs/images/                 the README's screenshots
 ```
 
@@ -81,6 +82,8 @@ docs/images/                 the README's screenshots
 - **Add a line to [CHANGELOG.md](CHANGELOG.md)** under _Unreleased_, saying what changed for the person using the mod.
 
 ## Releases
+
+`npm run bump -- 0.2.0` sets the version in `plugin.json` and the module's manifest, and turns the changelog's _Unreleased_ section into that version's, dated today in UTC. Commit it, and once it is on `main`, tag it.
 
 A version tag (`v0.2.0`) publishes a release with that version's section of the changelog (`.github/workflows/release.yml`), once the tag, `plugin.json` and the module's manifest agree on the version. Dependabot keeps the pinned actions and the development tools current.
 

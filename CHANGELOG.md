@@ -4,6 +4,12 @@ Every change worth knowing about, newest first. The format follows [Keep a Chang
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-10-23
+
+### Changed
+
+- The account picker shows an account's weekly limit at 100% and the time until it resets while its week is used up, in place of the 5-hour window, which does not matter until then.
+
 ## [0.1.1] - 2026-10-21
 
 ### Changed
@@ -29,6 +35,7 @@ The first release.
 - **Shared Code sessions**, off by default: the accounts ticked under **Shared sessions** get one list of Code sessions, brought together at each switch.
 - **The switcher script** runs from a shell too (`scripts\switch.ps1`), with an exit code that says what went wrong.
 
-[Unreleased]: https://github.com/plexxed/claude-desktop-account-switcher/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/plexxed/claude-desktop-account-switcher/compare/v0.1.2...HEAD
+[0.1.2]: https://github.com/plexxed/claude-desktop-account-switcher/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/plexxed/claude-desktop-account-switcher/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/plexxed/claude-desktop-account-switcher/releases/tag/v0.1.0
